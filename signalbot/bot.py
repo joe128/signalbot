@@ -143,6 +143,7 @@ class SignalBot:
         command.bot = self
         command.setup()
 
+        groups_unresolvednames = []
         group_ids = None
 
         if isinstance(groups, bool):
@@ -154,10 +155,9 @@ class SignalBot:
                 if self._is_group_id(group):  # group is a group id, higher prio
                     group_ids.append(group)
                 else:  # group is a group name
-                    for matched_group in self._groups_by_name:
-                        group_ids.append(matched_group["id"])
+                    groups_unresolvednames.append(group)
 
-        self.commands.append((command, contacts, group_ids, f))
+        self.commands.append((command, contacts, group_ids, f, groups_unresolvednames))
 
     def start(self):
         # TODO: schedule this every hour or so
@@ -235,6 +235,23 @@ class SignalBot:
             self._groups_by_name[group["name"]].append(group)
 
         logging.info(f"[Bot] {len(self.groups)} groups detected")
+        self._resolve_groupnames_for_commands()
+
+    def _resolve_groupnames_for_commands(self):
+        logging.info(f"[Bot] resolve groupnames for commands")
+        for idx, commandInstance in enumerate(self.commands):
+            command, contacts, group_ids, f, groups_unresolvednames = commandInstance
+            if groups_unresolvednames:
+                for unresolved_group in groups_unresolvednames:
+                    group = self._groups_by_name[unresolved_group]
+                    if group:
+                       if isinstance(group_ids, bool):
+                           group_ids = []
+                       group_ids.append(group[0]["id"])
+                       logging.debug(f"[Bot] Sucessfully resolved Group '{unresolved_group}' for Command {command}!")
+                       self.commands[idx] = (command, contacts, group_ids, f, groups_unresolvednames)
+                    else:
+                        logging.warning(f"[Bot] Couldn't resolve Group '{unresolved_group}' for Command {command}")
 
     def _resolve_receiver(self, receiver: str) -> str:
         if self._is_phone_number(receiver):
@@ -387,7 +404,7 @@ class SignalBot:
         return f(message)
 
     async def _ask_commands_to_handle(self, message: Message):
-        for command, contacts, group_ids, f in self.commands:
+        for command, contacts, group_ids, f, groups_unresolvednames in self.commands:
             if not self._should_react_for_contact(message, contacts, group_ids):
                 continue
 

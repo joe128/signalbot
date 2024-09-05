@@ -18,7 +18,7 @@ jobs:
       url: https://test.pypi.org/project/signalbot/${{ steps.get-version.outputs.package_version }}/
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Set up Python 3.11
         uses: actions/setup-python@v2
         with:
@@ -50,7 +50,7 @@ jobs:
       url: https://pypi.org/project/signalbot/${{ steps.get-version.outputs.package_version }}/
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Set up Python 3.9
         uses: actions/setup-python@v2
         with:

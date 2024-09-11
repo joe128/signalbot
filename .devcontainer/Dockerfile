@@ -29,7 +29,7 @@ RUN DEBIAN_FRONTEND=noninteractive \
 USER $USER
 ARG HOME="/home/$USER"
 # renovate: datasource=python-version depName=python versioning=python
-ARG PYTHON_VERSION=3.9.18
+ARG PYTHON_VERSION=3.12.6
 
 ENV PYENV_ROOT="${HOME}/.pyenv"
 ENV PATH="${PYENV_ROOT}/shims:${PYENV_ROOT}/bin:${HOME}/.local/bin:$PATH"

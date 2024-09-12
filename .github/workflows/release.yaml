@@ -19,13 +19,15 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v2
-      - name: Set up Python 3.11
+      - name: Set up Python
         uses: actions/setup-python@v2
         with:
+          # renovate: datasource=python-version depName=python versioning=python
           python-version: 3.11
       - name: Install Poetry
         uses: abatilo/actions-poetry@v2.0.0
         with:
+          # renovate: datasource=pypi depName=poetry versioning=pep440
           poetry-version: 1.5.1
       - name: Install dependencies
         run: poetry install --no-dev
@@ -51,13 +53,15 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v2
-      - name: Set up Python 3.9
+      - name: Set up Python
         uses: actions/setup-python@v2
         with:
+          # renovate: datasource=python-version depName=python versioning=python
           python-version: 3.11
       - name: Install Poetry
         uses: abatilo/actions-poetry@v2.0.0
         with:
+          # renovate: datasource=pypi depName=poetry versioning=pep440
           poetry-version: 1.5.1
       - name: Install dependencies
         run: poetry install --no-dev

@@ -18,14 +18,14 @@ jobs:
       url: https://test.pypi.org/project/signalbot/${{ steps.get-version.outputs.package_version }}/
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v5
         with:
           # renovate: datasource=python-version depName=python versioning=python
           python-version: 3.11
       - name: Install Poetry
-        uses: abatilo/actions-poetry@v2.0.0
+        uses: abatilo/actions-poetry@v3.0.0
         with:
           # renovate: datasource=pypi depName=poetry versioning=pep440
           poetry-version: 1.5.1
@@ -52,14 +52,14 @@ jobs:
       url: https://pypi.org/project/signalbot/${{ steps.get-version.outputs.package_version }}/
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v5
         with:
           # renovate: datasource=python-version depName=python versioning=python
           python-version: 3.11
       - name: Install Poetry
-        uses: abatilo/actions-poetry@v2.0.0
+        uses: abatilo/actions-poetry@v3.0.0
         with:
           # renovate: datasource=pypi depName=poetry versioning=pep440
           poetry-version: 1.5.1

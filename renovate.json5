@@ -32,13 +32,12 @@
     ],
     "packageRules": [
       {
-        "matchFileNames": [".github/**"],
-        "groupName": "github-actions"
+        "matchDatasources": ["python-version"],
+        "groupName": "python"
       },
       {
-        "matchDatasources": ["python-version"],
-        "matchCategories": ["python"],
-        "groupName": "python"
+        "matchFileNames": [".github/**"],
+        "groupName": "github-actions"
       }
     ]
   }

@@ -22,9 +22,10 @@
         "fileMatch": [
           "(^|/)(\\.(?:github)/(?:workflows))/.+\\.ya?ml$"
         ],
-        "_matchString_hint_example": "# renovate: datasource=python-version depName=python versioning=python",
-        "_matchString_version_example": "python-version: 3.11",
         "matchStrings": [
+          // # renovate: datasource=python-version depName=python versioning=python
+          // with:
+          //  python-version: 3.11
           "# renovate: datasource=(?<datasource>[a-z-.]+?) depName=(?<depName>[^\\s]+?)(?: (?:lookupName|packageName)=(?<packageName>[^\\s]+?))?(?: versioning=(?<versioning>[^\\s]+?))?(?: extractVersion=(?<extractVersion>[^\\s]+?))?\\s+[A-Za-z0-9_]+?-version\\s*:\\s*[\"']?(?<currentValue>.+?)[\"']?\\s"
         ]
       }

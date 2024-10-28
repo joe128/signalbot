@@ -69,18 +69,18 @@ jobs:
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
 
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: ${{ fromJson(steps.get_pull_request_ref.outputs.data).head.ref }}
 
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v5
         with:
           # renovate: datasource=python-version depName=python versioning=python
           python-version: 3.11
 
       - name: Install Poetry
-        uses: abatilo/actions-poetry@v2.0.0
+        uses: abatilo/actions-poetry@v3.0.1
         with:
           # renovate: datasource=pypi depName=poetry versioning=pep440
           poetry-version: 1.5.1
@@ -107,7 +107,7 @@ jobs:
         run: poetry publish -r testpypi
 
       - name: Write comment in Pull Request
-        uses: peter-evans/create-or-update-comment@v1
+        uses: peter-evans/create-or-update-comment@v4
         with:
           issue-number: ${{ github.event.issue.number }}
           body: |

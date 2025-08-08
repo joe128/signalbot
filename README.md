@@ -11,7 +11,6 @@ There is also a bigger example in the `example` folder.
 ```python
 import os
 from signalbot import SignalBot, Command, Context
-from commands import PingCommand
 
 
 class PingCommand(Command):
@@ -105,10 +104,11 @@ The package provides methods to easily listen for incoming messages and respondi
 - `bot.stop_typing(receiver)`: Stop typing
 - `bot.scheduler`: APScheduler > AsyncIOScheduler, see [here](https://apscheduler.readthedocs.io/en/3.x/modules/schedulers/asyncio.html?highlight=AsyncIOScheduler#apscheduler.schedulers.asyncio.AsyncIOScheduler)
 
-### Storage
+### Persistent storage
 
-`bot.storage` is in-memory, SQLite, or Redis storage, see `storage.py`.
-This is important because the bot runs multi-threaded, so instance state on your command classes isn't shared between threads.
+By default the `bot.storage` is in-memory.
+Any changes are lost when the bot is stopped or reseted.
+For persistent storage to disk, check the SQLite or Redis storage in `storage.py`.
 
 ### Command
 
@@ -120,7 +120,7 @@ To implement your own commands, you need to inherent `Command` and overwrite fol
 
 ### Unit Testing
 
-*Note: deprecated, I want to switch to pytest eventually*
+*Note: deprecated, the plan is to switch to pytest eventually*
 
 In many cases, we can mock receiving and sending messages to speed up development time. To do so, you can use `signalbot.utils.ChatTestCase` which sets up a "skeleton" bot. Then, you can send messages using the `@chat` decorator in `signalbot.utils` like this:
 ```python
@@ -150,18 +150,21 @@ In `signalbot.utils`, check out `ReceiveMessagesMock`, `SendMessagesMock` and `R
 - Do you see "consumers" picking up jobs and handling incoming messages?
 - Do you see the response in the bot's logs?
 
-## Local development and package
-
-*Section work in progress. Feel free to open an issue for questions.*
+## Local development
 
 ```bash
 poetry install
 poetry run pre-commit install
 ```
 
+## Real world bot examples
+
+There are many real world examples of bot implementations using this library.
+Check the whole list at https://github.com/filipre/signalbot/network/dependents
+
 ## Other Projects
 
-There are a few other related projects similar to this one. You may want to check them out and see if it fits your needs.
+There are a few other projects similar to this one. You may want to check them out and see if it fits your needs.
 
 |Project|Description|Language|
 |-------|-----------|--------|

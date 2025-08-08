@@ -3,22 +3,24 @@ import base64
 import aiohttp
 import websockets
 from typing import Any, Optional
+from typing import Literal
 
 
 class SignalAPI:
     def __init__(
-        self,
-        signal_service: str,
-        phone_number: str,
+        self, signal_service: str, phone_number: str, download_attachments: bool = True
     ):
-        self.signal_service = signal_service
         self.phone_number = phone_number
-
+        self._signal_api_uris = SignalAPIURIs(
+            signal_service=signal_service,
+            phone_number=phone_number,
+        )
+        self.download_attachments = download_attachments
         # self.session = aiohttp.ClientSession()
 
     async def receive(self):
         try:
-            uri = self._receive_ws_uri()
+            uri = self._signal_api_uris.receive_ws_uri()
             self.connection = websockets.connect(uri, ping_interval=None)
             async with self.connection as websocket:
                 async for raw_message in websocket:
@@ -38,8 +40,9 @@ class SignalAPI:
         quote_timestamp: str = None,
         mentions: list[dict[str, Any]] | None = None,
         text_mode: str = None,
+        edit_timestamp: str | None = None,
     ) -> aiohttp.ClientResponse:
-        uri = self._send_rest_uri()
+        uri = self._signal_api_uris.send_rest_uri()
         if base64_attachments is None:
             base64_attachments = []
 
@@ -62,6 +65,8 @@ class SignalAPI:
             payload["mentions"] = mentions
         if text_mode:
             payload["text_mode"] = text_mode
+        if edit_timestamp:
+            payload["edit_timestamp"] = edit_timestamp
 
         try:
             async with aiohttp.ClientSession() as session:
@@ -78,7 +83,7 @@ class SignalAPI:
     async def react(
         self, recipient: str, reaction: str, target_author: str, timestamp: int
     ) -> aiohttp.ClientResponse:
-        uri = self._react_rest_uri()
+        uri = self._signal_api_uris.react_rest_uri()
         payload = {
             "recipient": recipient,
             "reaction": reaction,
@@ -96,8 +101,28 @@ class SignalAPI:
         ):
             raise ReactionError
 
+    async def receipt(
+        self, recipient: str, receipt_type: Literal["read", "viewed"], timestamp: int
+    ) -> aiohttp.ClientResponse:
+        uri = self._signal_api_uris.receipts_rest_uri()
+        payload = {
+            "recipient": recipient,
+            "receipt_type": receipt_type,
+            "timestamp": timestamp,
+        }
+        try:
+            async with aiohttp.ClientSession() as session:
+                resp = await session.post(uri, json=payload)
+                resp.raise_for_status()
+                return resp
+        except (
+            aiohttp.ClientError,
+            aiohttp.http_exceptions.HttpProcessingError,
+        ):
+            raise ReactionError
+
     async def start_typing(self, receiver: str):
-        uri = self._typing_indicator_uri()
+        uri = self._signal_api_uris.typing_indicator_uri()
         payload = {
             "recipient": receiver,
         }
@@ -113,7 +138,7 @@ class SignalAPI:
             raise StartTypingError
 
     async def stop_typing(self, receiver: str):
-        uri = self._typing_indicator_uri()
+        uri = self._signal_api_uris.typing_indicator_uri()
         payload = {
             "recipient": receiver,
         }
@@ -129,7 +154,7 @@ class SignalAPI:
             raise StopTypingError
 
     async def get_groups(self) -> list[dict[str, Any]]:
-        uri = self._groups_uri()
+        uri = self._signal_api_uris.groups_uri()
         try:
             async with aiohttp.ClientSession() as session:
                 resp = await session.get(uri)
@@ -142,7 +167,7 @@ class SignalAPI:
             raise GroupsError
 
     async def get_attachment(self, attachment_id: str) -> str:
-        uri = f"{self._attachment_rest_uri()}/{attachment_id}"
+        uri = f"{self._signal_api_uris.attachment_rest_uri()}/{attachment_id}"
         try:
             async with aiohttp.ClientSession() as session:
                 resp = await session.get(uri)
@@ -160,7 +185,7 @@ class SignalAPI:
         return base64_string
 
     async def delete_attachment(self, attachment_id: str) -> str:
-        uri = f"{self._attachment_rest_uri()}/{attachment_id}"
+        uri = f"{self._signal_api_uris.attachment_rest_uri()}/{attachment_id}"
         try:
             async with aiohttp.ClientSession() as session:
                 resp = await session.delete(uri)
@@ -178,7 +203,7 @@ class SignalAPI:
         expiration_in_seconds: Optional[int] = None,
         name: Optional[str] = None,
     ) -> None:
-        uri = self._contacts_uri()
+        uri = self._signal_api_uris.contacts_uri()
         payload = {"recipient": receiver}
 
         if expiration_in_seconds is not None:
@@ -206,7 +231,7 @@ class SignalAPI:
         expiration_in_seconds: Optional[int] = None,
         name: Optional[str] = None,
     ) -> None:
-        uri = self._group_id_uri(group_id)
+        uri = self._signal_api_uris.group_id_uri(group_id)
         payload = {}
 
         if base64_avatar is not None:
@@ -232,29 +257,77 @@ class SignalAPI:
         ):
             raise ContactUpdateError
 
-    def _attachment_rest_uri(self):
-        return f"http://{self.signal_service}/v1/attachments"
+    async def health_check(self) -> aiohttp.ClientResponse:
+        uri = self._signal_api_uris.health_check_uri()
+        try:
+            async with aiohttp.ClientSession() as session:
+                resp = await session.get(uri)
+                resp.raise_for_status()
+                return resp
+        except (
+            aiohttp.ClientError,
+            aiohttp.http_exceptions.HttpProcessingError,
+        ):
+            raise HealthCheckError
 
-    def _receive_ws_uri(self):
-        return f"ws://{self.signal_service}/v1/receive/{self.phone_number}"
+    async def check_signal_service(self) -> bool:
+        self._signal_api_uris.use_https = True
+        try:
+            return (await self.health_check()).status == 204
+        except HealthCheckError:
+            self._signal_api_uris.use_https = False
+            try:
+                return (await self.health_check()).status == 204
+            except HealthCheckError as e:
+                return False
 
-    def _send_rest_uri(self):
-        return f"http://{self.signal_service}/v2/send"
 
-    def _react_rest_uri(self):
-        return f"http://{self.signal_service}/v1/reactions/{self.phone_number}"
+class SignalAPIURIs:
 
-    def _typing_indicator_uri(self):
-        return f"http://{self.signal_service}/v1/typing-indicator/{self.phone_number}"
+    def __init__(self, signal_service: str, phone_number: str, use_https: bool = True):
+        self.signal_service = signal_service
+        self.phone_number = phone_number
+        self.use_https = use_https
 
-    def _groups_uri(self):
-        return f"http://{self.signal_service}/v1/groups/{self.phone_number}"
+    @property
+    def https_or_http(self) -> str:
+        return "https" if self.use_https else "http"
 
-    def _group_id_uri(self, group_id: str):
-        return self._groups_uri() + "/" + group_id
+    @property
+    def wss_or_ws(self) -> str:
+        return "wss" if self.use_https else "ws"
 
-    def _contacts_uri(self):
-        return f"http://{self.signal_service}/v1/contacts/{self.phone_number}"
+    def attachment_rest_uri(self):
+        return f"{self.https_or_http}://{self.signal_service}/v1/attachments"
+
+    def receive_ws_uri(self):
+        return (
+            f"{self.wss_or_ws}://{self.signal_service}/v1/receive/{self.phone_number}"
+        )
+
+    def send_rest_uri(self):
+        return f"{self.https_or_http}://{self.signal_service}/v2/send"
+
+    def react_rest_uri(self):
+        return f"{self.https_or_http}://{self.signal_service}/v1/reactions/{self.phone_number}"
+
+    def typing_indicator_uri(self):
+        return f"{self.https_or_http}://{self.signal_service}/v1/typing-indicator/{self.phone_number}"
+
+    def groups_uri(self):
+        return f"{self.https_or_http}://{self.signal_service}/v1/groups/{self.phone_number}"
+
+    def group_id_uri(self, group_id: str):
+        return self.groups_uri() + "/" + group_id
+
+    def contacts_uri(self):
+        return f"{self.https_or_http}://{self.signal_service}/v1/contacts/{self.phone_number}"
+
+    def health_check_uri(self):
+        return f"{self.https_or_http}://{self.signal_service}/v1/health"
+
+    def receipts_rest_uri(self):
+        return f"{self.https_or_http}://{self.signal_service}/v1/receipts/{self.phone_number}"
 
 
 class ReceiveMessagesError(Exception):
@@ -290,4 +363,12 @@ class GetAttachmentError(Exception):
 
 
 class ContactUpdateError(Exception):
+    pass
+
+
+class HealthCheckError(Exception):
+    pass
+
+
+class SignalServiceConnectionError(Exception):
     pass

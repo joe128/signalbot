@@ -1,6 +1,5 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING
-from typing import Any
+from typing import TYPE_CHECKING, Literal, Any
 from copy import deepcopy
 
 from .message import Message
@@ -29,6 +28,22 @@ class Context:
             text_mode=text_mode,
         )
 
+    async def edit(
+        self,
+        text: str,
+        base64_attachments: list | None = None,
+        mentions: list | None = None,
+        text_mode: str | None = None,
+    ):
+        return await self.bot.send(
+            self.message.recipient(),
+            text,
+            base64_attachments=base64_attachments,
+            mentions=mentions,
+            text_mode=text_mode,
+            edit_timestamp=self.message.timestamp,
+        )
+
     async def reply(
         self,
         text: str,
@@ -55,6 +70,9 @@ class Context:
 
     async def react(self, emoji: str):
         await self.bot.react(self.message, emoji)
+
+    async def receipt(self, receipt_type: Literal["read", "viewed"]):
+        await self.bot.receipt(self.message, receipt_type)
 
     async def start_typing(self):
         await self.bot.start_typing(self.message.recipient())

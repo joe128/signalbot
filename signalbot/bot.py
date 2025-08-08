@@ -4,10 +4,11 @@ import time
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import logging
 import traceback
-from typing import Optional, Union, List, Callable, Any, TypeAlias
+from typing import Optional, Union, List, Callable, Any, TypeAlias, Literal
 import re
 import uuid
 import phonenumbers
+import itertools
 
 from .api import SignalAPI, ReceiveMessagesError
 from .command import Command
@@ -30,12 +31,16 @@ class SignalBot:
         """SignalBot
 
         Example Config:
-        ===============
+        ======= Mandatory fields ========
         signal_service: "127.0.0.1:8080"
         phone_number: "+49123456789"
+
+        ======= Optional fields ========
         storage:
             redis_host: "redis"
             redis_port: 6379
+        retry_interval: 1
+        download_attachments: True
         """
         self.config = config
 
@@ -54,7 +59,10 @@ class SignalBot:
         try:
             self._phone_number = self.config["phone_number"]
             self._signal_service = self.config["signal_service"]
-            self._signal = SignalAPI(self._signal_service, self._phone_number)
+            download_attachments = self.config.get("download_attachments", True)
+            self._signal = SignalAPI(
+                self._signal_service, self._phone_number, download_attachments
+            )
         except KeyError:
             raise SignalBotError("Could not initialize SignalAPI with given config")
 
@@ -62,20 +70,26 @@ class SignalBot:
         self._q = asyncio.Queue()
         self._running_tasks: set[asyncio.Task] = set()
 
+        self._produce_tasks: set[asyncio.Task] = set()
+        self._consume_tasks: set[asyncio.Task] = set()
+
         try:
             self.scheduler = AsyncIOScheduler(event_loop=self._event_loop)
         except Exception as e:
             raise SignalBotError(f"Could not initialize scheduler: {e}")
 
+        config_storage = {}
         try:
             config_storage = self.config["storage"]
             if config_storage.get("type") == "sqlite":
                 self._sqlite_db = config_storage["sqlite_db"]
                 self.storage = SQLiteStorage(self._sqlite_db)
+                logging.info("sqlite storage initilized")
             else:
                 self._redis_host = config_storage["redis_host"]
                 self._redis_port = config_storage["redis_port"]
                 self.storage = RedisStorage(self._redis_host, self._redis_port)
+                logging.info("redis storage initilized")
         except Exception:
             self.storage = SQLiteStorage()
             logging.warning(
@@ -83,6 +97,10 @@ class SignalBot:
                 " In-memory storage will be used."
                 " Restarting will delete the storage!"
             )
+            if "redis_host" in config_storage:
+                logging.warning(
+                    f"[Bot] Redis initialization error: {traceback.format_exc()}"
+                )
 
     # deprecated
     def listen(self, required_id: str, optional_id: str = None):
@@ -163,6 +181,7 @@ class SignalBot:
         self._commands_to_be_registered.append((command, contacts, groups, f))
 
     async def _resolve_commands(self):
+        self.commands = []
         for command, contacts, groups, f in self._commands_to_be_registered:
             group_ids = None
 
@@ -186,18 +205,26 @@ class SignalBot:
             self.commands.append((command, contacts, group_ids, f))
 
     async def _async_post_init(self):
+        await self._check_signal_service()
         await self._detect_groups()
         await self._resolve_commands()
         await self._produce_consume_messages()
 
-    def _store_reference_to_task(self, task: asyncio.Task):
+    async def _check_signal_service(self):
+        while (await self._signal.check_signal_service()) is False:
+            logging.error("Cannot connect to the signal-cli-rest-api service, retrying")
+            await asyncio.sleep(self.config.get("retry_interval", 1))
+
+    def _store_reference_to_task(self, task: asyncio.Task, task_set: set[asyncio.Task]):
         # Keep a hard reference to the tasks, fixes Ruff's RUF006 rule
-        self._running_tasks.add(task)
-        task.add_done_callback(self._running_tasks.discard)
+        task_set.add(task)
+        task.add_done_callback(task_set.discard)
 
     def start(self):
-        task = self._event_loop.create_task(self._async_post_init())
-        self._store_reference_to_task(task)
+        task = self._event_loop.create_task(
+            self._rerun_on_exception(self._async_post_init)
+        )
+        self._store_reference_to_task(task, self._running_tasks)
 
         # Add more scheduler tasks here
         # self.scheduler.add_job(...)
@@ -218,6 +245,7 @@ class SignalBot:
         mentions: (
             list[dict[str, Any]] | None
         ) = None,  # [{ "author": "uuid" , "start": 0, "length": 1 }]
+        edit_timestamp: str | None = None,
         text_mode: str = None,
         listen: bool = False,
     ) -> str:
@@ -232,6 +260,7 @@ class SignalBot:
             quote_timestamp=quote_timestamp,
             mentions=mentions,
             text_mode=text_mode,
+            edit_timestamp=edit_timestamp,
         )
         resp_payload = await resp.json()
         timestamp = resp_payload["timestamp"]
@@ -250,6 +279,15 @@ class SignalBot:
         timestamp = message.timestamp
         await self._signal.react(recipient, emoji, target_author, timestamp)
         logging.info(f"[Bot] New reaction: {emoji}")
+
+    async def receipt(self, message: Message, receipt_type: Literal["read", "viewed"]):
+        if message.group is not None:
+            logging.warning(f"[Bot] Receipts are not supported for groups")
+            return
+
+        recipient = self._resolve_receiver(message.recipient())
+        await self._signal.receipt(recipient, receipt_type, message.timestamp)
+        logging.info(f"[Bot] Receipt: {receipt_type}")
 
     async def start_typing(self, receiver: str):
         receiver = self._resolve_receiver(receiver)
@@ -410,7 +448,7 @@ class SignalBot:
             start_t = int(time.monotonic())  # seconds
 
             try:
-                await coro(*args, **kwargs)
+                return await coro(*args, **kwargs)
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -429,15 +467,22 @@ class SignalBot:
             await asyncio.sleep(sleep_t)
 
     async def _produce_consume_messages(self, producers=1, consumers=3) -> None:
+        for task in itertools.chain(self._consume_tasks, self._produce_tasks):
+            task.cancel()
+
+        self._produce_tasks.clear()
+
         for n in range(1, producers + 1):
             produce_task = self._rerun_on_exception(self._produce, n)
-            task = asyncio.create_task(produce_task)
-            self._store_reference_to_task(task)
+            produce_task = asyncio.create_task(produce_task)
+            self._store_reference_to_task(produce_task, self._produce_tasks)
+
+        self._consume_tasks.clear()
 
         for n in range(1, consumers + 1):
             consume_task = self._rerun_on_exception(self._consume, n)
-            task = asyncio.create_task(consume_task)
-            self._store_reference_to_task(task)
+            consume_task = asyncio.create_task(consume_task)
+            self._store_reference_to_task(consume_task, self._consume_tasks)
 
     async def _produce(self, name: int) -> None:
         logging.info(f"[Bot] Producer #{name} started")

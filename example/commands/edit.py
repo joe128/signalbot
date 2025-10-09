@@ -1,9 +1,11 @@
-from signalbot import Command, Context
+import asyncio
+
+from signalbot import Command, Context, triggered
 
 
 class EditCommand(Command):
-    async def handle(self, c: Context):
-        if "edit" in c.message.text.lower():
-            await c.edit(
-                "i read it now. i hope you're doing ok",
-            )
+    @triggered("edit")
+    async def handle(self, c: Context) -> None:
+        timestamp = await c.send("This message will be edited in two seconds.")
+        await asyncio.sleep(2)
+        await c.edit("This message has been edited.", edit_timestamp=timestamp)

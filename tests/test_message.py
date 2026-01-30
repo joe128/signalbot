@@ -14,6 +14,9 @@ class TestMessage(unittest.IsolatedAsyncioTestCase):
     raw_reaction_message = '{"envelope":{"source":"<source>","sourceNumber":"<source>","sourceUuid":"<uuid>","sourceName":"<name>","sourceDevice":1,"timestamp":1632576001632,"syncMessage":{"sentMessage":{"timestamp":1632576001632,"message":null,"expiresInSeconds":0,"viewOnce":false,"reaction":{"emoji":"👍","targetAuthor":"<target>","targetAuthorNumber":"<target>","targetAuthorUuid":"<uuid>","targetSentTimestamp":1632576001632,"isRemove":false},"mentions":[],"attachments":[],"contacts":[],"groupInfo":{"groupId":"<groupid>","type":"DELIVER"},"destination":null,"destinationNumber":null,"destinationUuid":null}}}}'  # noqa: E501
     raw_user_chat_message = '{"envelope":{"source":"+490123456789","sourceNumber":"+490123456789","sourceUuid":"<uuid>","sourceName":"<name>","sourceDevice":1,"timestamp":1632576001632,"dataMessage":{"timestamp":1632576001632,"message":"Uhrzeit","expiresInSeconds":0,"viewOnce":false}},"account":"+49987654321","subscription":0}'  # noqa: E501
     raw_attachment_message = '{"envelope":{"source":"+490123456789","sourceNumber":"+490123456789","sourceUuid":"<uuid>","sourceName":"<name>","sourceDevice":1,"timestamp":1632576001632,"dataMessage":{"timestamp":1632576001632,"message":"Uhrzeit","expiresInSeconds":0,"viewOnce":false, "attachments": [{"contentType": "image/png", "filename": "image.png", "id": "1qeCjjWOOo9Gxv8pfdCw.png","size": 12005}]}},"account":"+49987654321","subscription":0}'  # noqa: E501
+    raw_preview_no_image_message = '{"envelope":{"source":"+490123456789","sourceNumber":"+490123456789","sourceUuid":"<uuid>","sourceName":"<name>","sourceDevice":1,"timestamp":1632576001632,"serverReceivedTimestamp":1632576001632,"serverDeliveredTimestamp":1632576001632,"dataMessage":{"timestamp":1632576001632,"message":"https://example.com is nice","expiresInSeconds":0,"viewOnce":false,"previews":[{"url":"https://example.com","title":"Example.com - Super example","description":"","image":null}],"account":"+41774289587"}}}'  # noqa: E501
+    raw_user_read_message = '{"envelope":{"source":"+490123456789","sourceNumber":"+490123456789","sourceUuid":"<uuid>","sourceName":"<name>","sourceDevice":1,"timestamp":1632576001632,"serverReceivedTimestamp":1632576001632,"serverDeliveredTimestamp":1632576001632,"syncMessage":{"readMessages":[{"sender":"+49987654321","senderNumber":"+49987654321","senderUuid":"<uuid>","timestamp":1632576001632}]}},"account":"+49987654321"}'  # noqa: E501
+    raw_group_update_message = '{"envelope":{"source":"+490123456789","sourceNumber":"+490123456789","sourceUuid":"<uuid>","sourceName":"<name>","sourceDevice":1,"timestamp":1768100104294,"serverReceivedTimestamp":1768100103544,"serverDeliveredTimestamp":1768100103588,"dataMessage":{"timestamp":1768100104294,"message":null,"expiresInSeconds":86400,"isExpirationUpdate":false,"viewOnce":false,"groupInfo":{"groupId":"<groupid>","groupName":"<name>","revision":100,"type":"UPDATE"}}},"account":"+49987654321"}'  # noqa: E501
 
     expected_source = "+490123456789"
     expected_timestamp = 1632576001632
@@ -28,60 +31,66 @@ class TestMessage(unittest.IsolatedAsyncioTestCase):
     group_secret = "group.group_secret1"  # noqa: S105
     groups = {group_id: group_secret}  # noqa: RUF012
 
-    def setUp(self):  # noqa: ANN201
+    def setUp(self):
         self.signal_api = SignalAPI(
             TestMessage.signal_service,
             TestMessage.phone_number,
         )
 
     # Own Message
-    async def test_parse_source_own_message(self):  # noqa: ANN201
+    async def test_parse_source_own_message(self):
         message = await Message.parse(self.signal_api, TestMessage.raw_sync_message)
         self.assertEqual(message.timestamp, TestMessage.expected_timestamp)  # noqa: PT009
 
-    async def test_parse_timestamp_own_message(self):  # noqa: ANN201
+    async def test_parse_timestamp_own_message(self):
         message = await Message.parse(self.signal_api, TestMessage.raw_sync_message)
         self.assertEqual(message.source, TestMessage.expected_source)  # noqa: PT009
 
-    async def test_parse_type_own_message(self):  # noqa: ANN201
+    async def test_parse_type_own_message(self):
         message = await Message.parse(self.signal_api, TestMessage.raw_sync_message)
         self.assertEqual(message.type, MessageType.SYNC_MESSAGE)  # noqa: PT009
 
-    async def test_parse_text_own_message(self):  # noqa: ANN201
+    async def test_parse_text_own_message(self):
         message = await Message.parse(self.signal_api, TestMessage.raw_sync_message)
         self.assertEqual(message.text, TestMessage.expected_text)  # noqa: PT009
 
-    async def test_parse_group_own_message(self):  # noqa: ANN201
+    async def test_parse_group_own_message(self):
         message = await Message.parse(self.signal_api, TestMessage.raw_sync_message)
         self.assertEqual(message.group, TestMessage.expected_group)  # noqa: PT009
 
     # Foreign Messages
-    async def test_parse_source_foreign_message(self):  # noqa: ANN201
+    async def test_parse_source_foreign_message(self):
         message = await Message.parse(self.signal_api, TestMessage.raw_data_message)
         self.assertEqual(message.timestamp, TestMessage.expected_timestamp)  # noqa: PT009
 
-    async def test_parse_timestamp_foreign_message(self):  # noqa: ANN201
+    async def test_parse_timestamp_foreign_message(self):
         message = await Message.parse(self.signal_api, TestMessage.raw_data_message)
         self.assertEqual(message.source, TestMessage.expected_source)  # noqa: PT009
 
-    async def test_parse_type_foreign_message(self):  # noqa: ANN201
+    async def test_parse_type_foreign_message(self):
         message = await Message.parse(self.signal_api, TestMessage.raw_data_message)
         self.assertEqual(message.type, MessageType.DATA_MESSAGE)  # noqa: PT009
 
-    async def test_parse_text_foreign_message(self):  # noqa: ANN201
+    async def test_parse_text_foreign_message(self):
         message = await Message.parse(self.signal_api, TestMessage.raw_data_message)
         self.assertEqual(message.text, TestMessage.expected_text)  # noqa: PT009
 
-    async def test_parse_group_foreign_message(self):  # noqa: ANN201
+    async def test_parse_group_foreign_message(self):
         message = await Message.parse(self.signal_api, TestMessage.raw_data_message)
         self.assertEqual(message.group, TestMessage.expected_group)  # noqa: PT009
 
-    async def test_read_reaction(self):  # noqa: ANN201
+    async def test_read_reaction(self):
         message = await Message.parse(self.signal_api, TestMessage.raw_reaction_message)
         self.assertEqual(message.reaction, "👍")  # noqa: PT009
 
+    async def test_group_update(self):
+        message = await Message.parse(
+            self.signal_api, TestMessage.raw_group_update_message
+        )
+        self.assertEqual(message.updated_group_id, TestMessage.expected_group)  # noqa: PT009
+
     @patch("aiohttp.ClientSession.get", new_callable=AsyncMock)
-    async def test_attachments(self, mock_get):  # noqa: ANN001, ANN201
+    async def test_attachments(self, mock_get):  # noqa: ANN001
         attachment_bytes_str = b"test"
 
         mock_response = AsyncMock(spec=aiohttp.ClientResponse)
@@ -106,7 +115,7 @@ class TestMessage(unittest.IsolatedAsyncioTestCase):
         )
 
     # User Chats
-    async def test_parse_user_chat_message(self):  # noqa: ANN201
+    async def test_parse_user_chat_message(self):
         message = await Message.parse(
             self.signal_api,
             TestMessage.raw_user_chat_message,
@@ -115,6 +124,36 @@ class TestMessage(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(message.text, TestMessage.expected_text)  # noqa: PT009
         self.assertEqual(message.timestamp, TestMessage.expected_timestamp)  # noqa: PT009
         self.assertIsNone(message.group)  # noqa: PT009
+
+    async def test_preview_no_image(self):
+        message = await Message.parse(
+            self.signal_api, TestMessage.raw_preview_no_image_message
+        )
+        self.assertIsInstance(message.link_previews, list)  # noqa: PT009
+        self.assertEqual(len(message.link_previews), 1)  # noqa: PT009
+
+        lp = message.link_previews[0]
+        self.assertIsNone(lp.id)  # noqa: PT009
+        self.assertIsNone(lp.base64_thumbnail)  # noqa: PT009
+        self.assertEqual(lp.url, "https://example.com")  # noqa: PT009
+        self.assertEqual(lp.title, "Example.com - Super example")  # noqa: PT009
+        self.assertEqual(lp.description, "")  # noqa: PT009
+
+    async def test_message_read(self):
+        message = await Message.parse(
+            self.signal_api, TestMessage.raw_user_read_message
+        )
+
+        self.assertEqual(message.type, MessageType.READ_MESSAGE)  # noqa: PT009
+        self.assertEqual(message.text, "")  # noqa: PT009
+        self.assertIsInstance(message.read_messages, list)  # noqa: PT009
+        self.assertEqual(len(message.read_messages), 1)  # noqa: PT009
+
+        rm = message.read_messages[0]
+        self.assertEqual(rm.get("sender"), "+49987654321")  # noqa: PT009
+        self.assertEqual(rm.get("senderNumber"), "+49987654321")  # noqa: PT009
+        self.assertEqual(rm.get("timestamp"), TestMessage.expected_timestamp)  # noqa: PT009
+        self.assertIn("senderUuid", rm)  # noqa: PT009
 
 
 if __name__ == "__main__":

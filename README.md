@@ -1,5 +1,10 @@
 # Signal Bot Framework
 
+[![PyPI Downloads](https://img.shields.io/pypi/dm/signalbot?logo=python)](https://pepy.tech/projects/signalbot)
+[![image](https://img.shields.io/pypi/v/signalbot.svg)](https://pypi.python.org/pypi/signalbot)
+[![image](https://img.shields.io/pypi/l/signalbot.svg)](https://pypi.python.org/pypi/signalbot)
+[![CI](https://github.com/filipre/signalbot/actions/workflows/ci.yaml/badge.svg)](https://github.com/filipre/signalbot/actions/workflows/ci.yaml)
+
 Python package to build your own Signal bots.
 
 ## Getting Started
@@ -12,7 +17,8 @@ There is also a bigger example in the [example folder](https://github.com/filipr
 
 ```python
 import os
-from signalbot import SignalBot, Command, Context, triggered
+import logging
+from signalbot import SignalBot, Command, Context, triggered, enable_console_logging
 
 
 class PingCommand(Command):
@@ -22,6 +28,8 @@ class PingCommand(Command):
 
 
 if __name__ == "__main__":
+    enable_console_logging(logging.INFO)
+
     bot = SignalBot({
         "signal_service": os.environ["SIGNAL_SERVICE"],
         "phone_number": os.environ["PHONE_NUMBER"]
@@ -63,7 +71,7 @@ time="2022-03-07T13:02:24Z" level=info msg="Started Signal Messenger REST API"
 - `PHONE_NUMBER`: Phone number of the bot, e.g. `+49123456789`
 
 ```bash
-export SIGNAL_SERVICE="127.0.0.1"
+export SIGNAL_SERVICE="127.0.0.1:8080"
 export PHONE_NUMBER="+49123456789"
 pip install signalbot
 python bot.py
@@ -71,20 +79,20 @@ python bot.py
 
 7. The logs should indicate that one "producer" and three "consumers" have started. The producer checks for new messages sent to the linked account using a web socket connection. It creates a task for every registered command and the consumers work off the tasks. In case you are working with many blocking function calls, you may need to adjust the number of consumers such that the bot stays reactive.
 ```
-INFO:root:[Bot] Producer #1 started
-INFO:root:[Bot] Consumer #1 started
-INFO:root:[Bot] Consumer #2 started
-INFO:root:[Bot] Consumer #3 started
+<date> signalbot [WARNING] - __init__ - [Bot] Could not initialize Redis and no SQLite DB name was given. In-memory storage will be used. Restarting will delete the storage! Add storage: {'type': 'in-memory'} to the config to silence this error.
+<date> signalbot [INFO] - _detect_groups - [Bot] 3 groups detected
+<date> signalbot [INFO] - _produce - [Bot] Producer #1 started
+<date> signalbot [INFO] - _consume - [Bot] Consumer #1 started
+<date> signalbot [INFO] - _consume - [Bot] Consumer #2 started
+<date> signalbot [INFO] - _consume - [Bot] Consumer #3 started
 ```
 
 8. Send the message `Ping` (case sensitive) to the number that the bot is listening to. The bot (i.e. the linked account) should respond with a `Pong`. Confirm that the bot received a raw message, that the consumer worked on the message and that a new message has been sent.
 ```
-INFO:root:[Raw Message] {"envelope":{"source":"+49123456789","sourceNumber":"+49123456789","sourceUuid":"fghjkl-asdf-asdf-asdf-dfghjkl","sourceName":"René","sourceDevice":3,"timestamp":1646000000000,"syncMessage":{"sentMessage":{"destination":null,"destinationNumber":null,"destinationUuid":null,"timestamp":1646000000000,"message":"Pong","expiresInSeconds":0,"viewOnce":false,"groupInfo":{"groupId":"asdasdfweasdfsdfcvbnmfghjkl=","type":"DELIVER"}}}},"account":"+49123456789","subscription":0}
-INFO:root:[Bot] Consumer #2 got new job in 0.00046 seconds
-INFO:root:[Bot] Consumer #2 got new job in 0.00079 seconds
-INFO:root:[Bot] Consumer #2 got new job in 0.00093 seconds
-INFO:root:[Bot] Consumer #2 got new job in 0.00106 seconds
-INFO:root:[Bot] New message 1646000000000 sent:
+<date> signalbot [INFO] - _produce - [Raw Message] {"envelope": <raw message dictionary>}
+<date> signalbot [INFO] - _consume_new_item - [Bot] Consumer #2 got new job in 0.00046 seconds
+<date> signalbot [INFO] - _produce - [Raw Message] {"envelope": <raw message dictionary>}
+<date> signalbot [INFO] - send - [Bot] New message 1760797696983 sent:
 Pong
 ```
 
@@ -104,10 +112,11 @@ The package provides methods to easily listen for incoming messages and respondi
 - `bot.react(message, emoji)`: React to a message
 - `bot.start_typing(receiver)`: Start typing
 - `bot.stop_typing(receiver)`: Stop typing
-- `bot.edit(receiver, text, timestamp)`: Edit a previously sent message
+- `bot.send(receiver, text, edit_timestamp=timestamp)`: Edit a previously sent message
+- `bot.remote_delete(receiver, timestamp)`: Delete a previously sent message
 - `bot.receipt(message, receipt_type)`: Mark a message as read
 - `bot.update_group(group_id, avatar, description, expiration, name)`: Change group settings
-- `bot.delete_attachment(attachment_filename)`: Delete a previously downloaded attachment
+- `bot.delete_attachment(attachment_filename)`: Delete the local copy of an attachment
 - `bot.scheduler`: APScheduler > AsyncIOScheduler, see [here](https://apscheduler.readthedocs.io/en/3.x/modules/schedulers/asyncio.html?highlight=AsyncIOScheduler#apscheduler.schedulers.asyncio.AsyncIOScheduler)
 
 ### Persistent storage
@@ -121,12 +130,22 @@ For persistent storage to disk, check the SQLite or Redis storage in `storage.py
 To implement your own commands, you need to inherent `Command` and overwrite following methods:
 
 - `setup(self)`: Start any task that requires to send messages already, optional
-- `describe(self)`: String to describe your command, optional
-- `handle(self, c: Context)`: Handle an incoming message. By default, any command will read any incoming message. `Context` can be used to easily send (`c.send(text)`), reply (`c.reply(text)`), react (`c.react(emoji)`) and to type in a group (`c.start_typing()` and `c.stop_typing()`). You can use the `@triggered` decorator to listen for specific commands, the `@regex_triggered` decorator to listen for regular expressions, or you can inspect `c.message.text`.
+- `handle(self, c: Context)`: Handle an incoming message. By default, any command will read any incoming message. `Context` can be used to easily send (`c.send(text)`), reply (`c.reply(text)`), react (`c.react(emoji)`), edit (`c.edit(text, timestamp)`) and to type in a group (`c.start_typing()` and `c.stop_typing()`). You can use the `@triggered` decorator to listen for specific commands, the `@regex_triggered` decorator to listen for regular expressions, or you can inspect `c.message.text`.
+
+### Logging
+
+The logger name for the library is `"signalbot"`.
+It does not have any handlers attached, for convenience the `enable_console_logging(level)` function is provided.
 
 ### Unit Testing
 
 *Note: deprecated, the plan is to switch to pytest eventually*
+
+The tests can be executed with
+
+```bash
+uv run python -m unittest discover --start-directory ./tests
+```
 
 In many cases, we can mock receiving and sending messages to speed up development time. To do so, you can use `signalbot.utils.ChatTestCase` which sets up a "skeleton" bot. Then, you can send messages using the `@chat` decorator in `signalbot.utils` like this:
 ```python
@@ -158,10 +177,15 @@ In `signalbot.utils`, check out `ReceiveMessagesMock`, `SendMessagesMock` and `R
 
 ## Local development
 
-```bash
-poetry install
-poetry run pre-commit install
-```
+1. Install [uv](https://docs.astral.sh/uv/).
+2. Create a venv and install signalbot with its dependencies in it
+    ```bash
+    uv sync
+    ```
+3. Install the prek hook for linting and formatting
+    ```bash
+    uv run prek install
+    ```
 
 ## Real world bot examples
 
@@ -170,17 +194,18 @@ Check the whole list at https://github.com/filipre/signalbot/network/dependents
 
 ## Other Projects
 
-There are a few other projects similar to this one. You may want to check them out and see if it fits your needs.
+There are a few other projects similar to this one. You may want to check them out and see if they fit your needs.
 
-|Project|Description|Language|
-|-------|-----------|--------|
-|https://codeberg.org/lazlo/semaphore|signald Library / Bot Framework|Python|
-|https://git.sr.ht/~nicoco/aiosignald|signald Library / Bot Framework|Python|
-|https://gitlab.com/stavros/pysignald/|signald Library / Bot Framework|Python|
-|https://gitlab.com/signald/signald-go|signald Library|Go|
-|https://github.com/signal-bot/signal-bot|Bot Framework using Signal CLI|Python|
-|https://github.com/bbernhard/signal-cli-rest-api|REST API Wrapper for Signal CLI|Go|
-|https://github.com/bbernhard/pysignalclirestapi|Python Wrapper for REST API|Python|
-|https://github.com/AsamK/signal-cli|A CLI and D-Bus interface for Signal|Java|
-|https://github.com/signalapp/libsignal-service-java|Signal Library|Java|
-|https://github.com/aaronetz/signal-bot|Bot Framework|Java|
+|Project|Description|Language|Maintained|
+|-------|:---------:|:------:|:------:|
+|https://github.com/AsamK/signal-cli|A CLI and D-Bus interface for Signal|Java|✅|
+|https://github.com/bbernhard/pysignalclirestapi|Python Wrapper for REST API|Python|✅|
+|https://github.com/bbernhard/signal-cli-rest-api|REST API Wrapper for Signal CLI|Go|✅|
+|https://github.com/signal-bot/signal-bot|Bot Framework using Signal CLI|Python|❌|
+|https://github.com/signalapp/libsignal-service-java|Signal Library|Java|❌|
+|https://github.com/aaronetz/signal-bot|Bot Framework|Java|❌|
+|https://gitlab.com/signald/signald|A socket interface for Signal|Java|❌|
+|https://codeberg.org/lazlo/semaphore|signald Library / Bot Framework|Python|❌|
+|https://git.sr.ht/~nicoco/aiosignald|signald Library / Bot Framework|Python|❌|
+|https://gitlab.com/stavros/pysignald|signald Library / Bot Framework|Python|❌|
+|https://gitlab.com/signald/signald-go|signald Library|Go|❌|

@@ -39,7 +39,7 @@ dev = [
 repository = "https://github.com/filipre/signalbot"
 
 [build-system]
-requires = ["uv_build>=0.9.26,<0.10.0"]
+requires = ["uv_build>=0.11.14,<0.12.0"]
 build-backend = "uv_build"
 
 [[tool.uv.index]]

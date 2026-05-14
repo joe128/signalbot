@@ -1,21 +1,22 @@
-import logging  # noqa: INP001
+import logging
 import os
 
-from commands import (
+from examples.commands import (
     AttachmentCommand,
     DeleteCommand,
     DeleteLocalAttachmentCommand,
     EditCommand,
     HelpCommand,
     PingCommand,
+    ReactionCommand,
     ReceiveDeleteCommand,
     RegexTriggeredCommand,
     ReplyCommand,
     StylesCommand,
+    ThumbsUpCommand,
     TriggeredCommand,
     TypingCommand,
 )
-
 from signalbot import SignalBot, enable_console_logging
 
 
@@ -47,6 +48,8 @@ def main() -> None:
     bot.register(TriggeredCommand(), contacts=["+490123456789"], groups=True)
 
     bot.register(RegexTriggeredCommand())
+    bot.register(ReactionCommand())
+    bot.register(ThumbsUpCommand())
 
     bot.register(EditCommand())
     bot.register(DeleteCommand())

@@ -1,0 +1,15 @@
+import asyncio
+
+from examples.commands.help import CommandWithHelpMessage
+from signalbot import Context, triggered
+
+
+class EditCommand(CommandWithHelpMessage):
+    def help_message(self) -> str:
+        return "edit: ✏️ Edit a message."
+
+    @triggered("edit")
+    async def handle(self, context: Context) -> None:
+        timestamp = await context.send("This message will be edited in two seconds.")
+        await asyncio.sleep(2)
+        await context.edit("This message has been edited.", timestamp)

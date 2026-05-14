@@ -1,4 +1,4 @@
-from commands.help import CommandWithHelpMessage
+from examples.commands.help import CommandWithHelpMessage
 from signalbot import Context, triggered
 
 
@@ -7,5 +7,5 @@ class PingCommand(CommandWithHelpMessage):
         return "ping: 🏓 Listen for a ping and send a pong reply."
 
     @triggered("ping")
-    async def handle(self, c: Context) -> None:
-        await c.send("pong")
+    async def handle(self, context: Context) -> None:
+        await context.send("pong")

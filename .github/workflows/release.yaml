@@ -7,7 +7,7 @@ on:
 jobs:
   ci:
     name: CI
-    uses: filipre/signalbot/.github/workflows/ci.yaml@master
+    uses: ./.github/workflows/ci.yaml
 
   publish-test-pypi:
     name: Publish (test.pypi.org)
@@ -18,18 +18,21 @@ jobs:
       url: https://test.pypi.org/project/signalbot/${{ steps.get-version.outputs.package_version }}/
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
-      - name: Install the latest version of uv
-        uses: astral-sh/setup-uv@v3
-        with:
-          version: latest
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: ./.github/workflows/install-uv
+
       - name: Install dependencies
-        run: uv sync --no-dev
+        run: uv sync --locked --no-dev
+
       - name: Get Package Version
         id: get-version
         run: echo "{package_version}=$(uv version --short)" >> $GITHUB_OUTPUT
+
       - name: Build package
         run: uv build
+
       - name: Publish package
         run: uv publish --index testpypi --token ${{ secrets.API_TOKEN }}
 
@@ -42,17 +45,20 @@ jobs:
       url: https://pypi.org/project/signalbot/${{ steps.get-version.outputs.package_version }}/
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
-      - name: Install the latest version of uv
-        uses: astral-sh/setup-uv@v3
-        with:
-          version: latest
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: ./.github/workflows/install-uv
+
       - name: Install dependencies
-        run: uv sync --no-dev
+        run: uv sync --locked --no-dev
+
       - name: Get Package Version
         id: get-version
         run: echo "{package_version}=$(uv version --short)" >> $GITHUB_OUTPUT
+
       - name: Build package
         run: uv build
+
       - name: Publish package
         run: uv publish --token ${{ secrets.API_TOKEN }}

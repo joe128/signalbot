@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import itertools
 import logging
 import re
@@ -8,7 +9,7 @@ import time
 import traceback
 import uuid
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
 import phonenumbers
@@ -16,12 +17,21 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from packaging.version import Version
 
 from signalbot.api import ReceiveMessagesError, SignalAPI
+from signalbot.bot_config import (
+    Config,
+    InMemoryConfig,
+    RedisConfig,
+    SQLiteConfig,
+    load_config,
+)
 from signalbot.command import Command
 from signalbot.context import Context
 from signalbot.message import Message, MessageType, UnknownMessageFormatError
 from signalbot.storage import RedisStorage, SQLiteStorage
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from signalbot.link_previews import LinkPreview
 
 CommandList: TypeAlias = list[
@@ -34,9 +44,22 @@ CommandList: TypeAlias = list[
 ]
 
 LOGGER_NAME = "signalbot"
+"""
+The logger name used by signalbot.
+"""
+
+MIN_SIGNAL_CLI_REST_API_VERSION = Version("0.95.0")
+"""
+The minimum required version of `signal-cli-rest-api` for this version of `signalbot`.
+"""
 
 
 def enable_console_logging(level: int = logging.WARNING) -> None:
+    """Enable console logging for the signalbot logger.
+
+    Args:
+        level: Logging level for the logger.
+    """
     handler = logging.StreamHandler()
 
     formatter = logging.Formatter(
@@ -50,24 +73,39 @@ def enable_console_logging(level: int = logging.WARNING) -> None:
 
 
 class SignalBot:
-    def __init__(self, config: dict):  # noqa: ANN204
-        """SignalBot
+    """
+    SignalBot is the main class for the bot. It provides methods to register commands,
+    start the bot, and interact with messages.
 
-        Example Config:
-        ======= Mandatory fields ========
-        signal_service: "127.0.0.1:8080"
-        phone_number: "+49123456789"
+    Attributes:
+        config (Config): The configuration for the bot.
+        commands: A list of registered commands with their filters.
+            Only available after `.start()` is called and `init_task` is done.
+        groups (list): A list of groups the bot is a member of.
+            Only available after `.start()` is called and `init_task` is done.
+        storage (SQLiteStorage | RedisStorage): The storage backend used by the bot.
+        scheduler (AsyncIOScheduler): The scheduler for running scheduled tasks.
+        init_task: The initialization async task for the bot.
+            Only available after `.start()` is called.
+    """
 
-        ======= Optional fields ========
-        storage:
-            redis_host: "redis"
-            redis_port: 6379
-        retry_interval: 1
-        download_attachments: True
+    def __init__(self, config: Config | Mapping | Path | str) -> None:
+        """Initilization for the SignalBot.
+
+        Args:
+            config: the configuration for the bot.
+
+        Example config:
+        ```python
+        {
+            signal_service: "127.0.0.1:8080",
+            phone_number: "+49123456789"
+        }
+        ```
         """
         self._logger = logging.getLogger(LOGGER_NAME)
 
-        self.config = config
+        self.config = load_config(config)
 
         self._commands_to_be_registered: CommandList = []  # populated by .register()
         self.commands: CommandList = []  # populated by .start()
@@ -77,14 +115,14 @@ class SignalBot:
         self._groups_by_internal_id = {}
         self._groups_by_name = defaultdict(list)
 
+        self.init_task: None | asyncio.Task = None
+
         try:
-            self._phone_number = self.config["phone_number"]
-            self._signal_service = self.config["signal_service"]
-            download_attachments = self.config.get("download_attachments", True)
             self._signal = SignalAPI(
-                self._signal_service,
-                self._phone_number,
-                download_attachments,
+                self.config.signal_service,
+                self.config.phone_number,
+                self.config.download_attachments,
+                self.config.connection_mode,
             )
         except KeyError:
             raise SignalBotError("Could not initialize SignalAPI with given config")  # noqa: B904, EM101, TRY003
@@ -96,7 +134,6 @@ class SignalBot:
             asyncio.set_event_loop(self._event_loop)
 
         self._q = asyncio.Queue()
-        self._running_tasks: set[asyncio.Task] = set()
 
         self._produce_tasks: set[asyncio.Task] = set()
         self._consume_tasks: set[asyncio.Task] = set()
@@ -106,36 +143,33 @@ class SignalBot:
         except Exception as e:  # noqa: BLE001
             raise SignalBotError(f"Could not initialize scheduler: {e}")  # noqa: B904, EM102, TRY003
 
-        config_storage = {}
-        try:
-            config_storage = self.config["storage"]
-            if config_storage.get("type") == "sqlite":
-                self._sqlite_db = config_storage["sqlite_db"]
-                check_same_thread = config_storage.get("check_same_thread", True)
-                self.storage = SQLiteStorage(
-                    self._sqlite_db,
-                    check_same_thread=check_same_thread,
-                )
-                self._logger.info("sqlite storage initilized")
-            else:
-                self._redis_host = config_storage["redis_host"]
-                self._redis_port = config_storage["redis_port"]
-                self.storage = RedisStorage(self._redis_host, self._redis_port)
-                self._logger.info("redis storage initilized")
-        except Exception:  # noqa: BLE001
+        if isinstance(self.config.storage, SQLiteConfig):
+            self.storage = SQLiteStorage(
+                self.config.storage.sqlite_db,
+                check_same_thread=self.config.storage.check_same_thread,
+            )
+            self._logger.info("sqlite storage initilized")
+        elif isinstance(self.config.storage, RedisConfig):
+            self.storage = RedisStorage(
+                self.config.storage.redis_host, self.config.storage.redis_port
+            )
+            self._logger.info("redis storage initilized")
+        elif isinstance(self.config.storage, InMemoryConfig):
             self.storage = SQLiteStorage()
-            if config_storage.get("type") != "in-memory":
-                self._logger.warning(
-                    "[Bot] Could not initialize Redis and no SQLite DB name was given."
-                    " In-memory storage will be used."
-                    " Restarting will delete the storage!"
-                    " Add storage: {'type': 'in-memory'}"
-                    " to the config to silence this error.",
-                )
-            if "redis_host" in config_storage:
-                self._logger.warning(
-                    f"[Bot] Redis initialization error: {traceback.format_exc()}",  # noqa: G004
-                )
+            self._logger.info("in-memory storage initilized")
+        else:
+            self.storage = SQLiteStorage()
+            self._logger.warning(
+                " Using in-memory storage."
+                " Restarting will delete the storage!"
+                " Add storage: {'type': 'in-memory'}"
+                " to the config to silence this error.",
+            )
+
+    def get_group(self, internal_id: str) -> dict[str, Any] | None:
+        if internal_id in self._groups_by_internal_id:
+            return copy.deepcopy(self._groups_by_internal_id[internal_id])
+        return None
 
     def register(
         self,
@@ -144,6 +178,14 @@ class SignalBot:
         groups: list[str] | bool = True,  # noqa: FBT001, FBT002
         f: Callable[[Message], bool] | None = None,
     ) -> None:
+        """Register a command with optional contact/group filters.
+
+        Args:
+            command: Command instance to register.
+            contacts: Allowed contacts or True for all.
+            groups: Allowed groups or True for all.
+            f: Optional function to further filter messages.
+        """
         command.bot = self
         command.setup()
         self._commands_to_be_registered.append((command, contacts, groups, f))
@@ -159,40 +201,53 @@ class SignalBot:
             if isinstance(groups, list):
                 group_ids = []
                 for group in groups:
-                    if self._is_group_id(group):  # group is a group id, higher prio
-                        group_ids.append(group)
-                    else:  # group is a group name
-                        matched_group = self._get_group_by_name(group)
-                        if matched_group is not None:
-                            group_ids.append(matched_group["id"])
-                        else:
-                            self._logger.warning(
-                                f"[Bot] [{command.__class__.__name__}] '{group}' is not a valid group name or id",  # noqa: E501, G004
-                            )
+                    group_id = self._resolve_group_receiver(group)
+                    if group_id is not None:
+                        group_ids.append(group_id)
+                    else:
+                        error_msg = f"[Bot] [{command.__class__.__name__}] '{group}' "
+                        error_msg += "is not a valid group name or id"
+                        self._logger.warning(error_msg)
 
             self.commands.append((command, contacts, group_ids, f))
 
     async def _async_post_init(self) -> None:
         await self._check_signal_service()
         await self._check_signal_cli_rest_api_version()
+        await self._check_signal_cli_rest_api_mode()
         await self._detect_groups()
         await self._resolve_commands()
-        await self._produce_consume_messages()
+        await self._create_produce_consume_messages_tasks()
 
     async def _check_signal_service(self) -> None:
         while (await self._signal.check_signal_service()) is False:
             self._logger.error(
                 "Cannot connect to the signal-cli-rest-api service, retrying"
             )
-            await asyncio.sleep(self.config.get("retry_interval", 1))
+            await asyncio.sleep(self.config.retry_interval)
 
     async def _check_signal_cli_rest_api_version(self) -> None:
-        min_version = Version("0.95.0")
-        version = await self._signal.get_signal_cli_rest_api_version()
-        if Version(version) < min_version:
-            raise RuntimeError(  # noqa: TRY003
-                f"Incompatible signal-cli-rest-api version, found {version}, minimum required is {min_version}",  # noqa: E501, EM102
+        version = await self.signal_cli_rest_api_version()
+
+        # `unset` version is for preview versions of signal-cli-rest-api
+        if version == "unset":
+            self._logger.warning(
+                "signal-cli-rest-api version is unset; skipping compatibility check",
             )
+            return
+
+        if Version(version) < MIN_SIGNAL_CLI_REST_API_VERSION:
+            error_msg = f"Incompatible signal-cli-rest-api version, found {version}"
+            error_msg += f", minimum required is {MIN_SIGNAL_CLI_REST_API_VERSION}"
+            raise RuntimeError(error_msg)
+
+    async def _check_signal_cli_rest_api_mode(self) -> None:
+        mode = await self.signal_cli_rest_api_mode()
+        if mode != "json-rpc":
+            error_msg = (
+                f"Wrong signal-cli-rest-api mode, found '{mode}', expected 'json-rpc'"
+            )
+            raise RuntimeError(error_msg)
 
     def _store_reference_to_task(
         self,
@@ -204,15 +259,27 @@ class SignalBot:
         task.add_done_callback(task_set.discard)
 
     def start(self, run_forever: bool = True) -> None:  # noqa: FBT001, FBT002
-        task = self._event_loop.create_task(
+        """Start the bot event loop and scheduler.
+
+        Args:
+            run_forever: Whether to start the event loop or only add the task to it.
+        """
+        self.init_task = self._event_loop.create_task(
             self._rerun_on_exception(self._async_post_init),
         )
-        self._store_reference_to_task(task, self._running_tasks)
 
         if run_forever:
             self.scheduler.start()
 
             self._event_loop.run_forever()
+
+    async def signal_cli_rest_api_version(self) -> str:
+        """Return the signal-cli-rest-api version."""
+        return await self._signal.get_signal_cli_rest_api_version()
+
+    async def signal_cli_rest_api_mode(self) -> str:
+        """Return the signal-cli-rest-api mode."""
+        return await self._signal.get_signal_cli_rest_api_mode()
 
     async def send(  # noqa: PLR0913
         self,
@@ -232,6 +299,31 @@ class SignalBot:
         text_mode: str | None = None,
         view_once: bool = False,
     ) -> int:
+        """Send or edit a message.
+
+        Args:
+            receiver: The recipient of the message.
+            text: The content of the message.
+            base64_attachments: List of attachments encoded in base64.
+            link_preview: Link previews to be sent with the message.
+            quote_author: The author of the quoted message, required if quote_message is
+                set.
+            quote_mentions: List of mentioned users in the quoted message, required if
+                quote_message is set.
+            quote_message: The content of the quoted message, required if quote_message
+                is set.
+            quote_timestamp: The timestamp of the quoted message, required if
+                quote_message is set.
+            mentions: List of dictionary of mentions, it has the format
+                `[{ "author": "uuid" , "start": 0, "length": 1 }]`.
+            edit_timestamp: The timestamp of the message to edit, if not set a new
+                message will be sent.
+            text_mode: The text mode of the message, can be "normal" or "styled".
+            view_once: Whether the message should be view once or not.
+
+        Returns:
+            The timestamp of the sent or edited message.
+        """
         receiver = self._resolve_receiver(receiver)
         link_preview_raw = link_preview.model_dump() if link_preview else None
 
@@ -255,7 +347,46 @@ class SignalBot:
 
         return timestamp
 
+    async def poll(
+        self,
+        receiver: str,
+        question: str,
+        answers: list[str],
+        *,
+        allow_multiple_selections: bool = False,
+    ) -> int:
+        """Create a poll.
+
+        Args:
+            receiver: The recipient of the message.
+            question: The poll question.
+            answers: List of answer options for the poll.
+            allow_multiple_selections: Whether multiple answers can be selected.
+
+        Returns:
+            The timestamp the poll was created.
+        """
+        receiver = self._resolve_receiver(receiver)
+
+        resp = await self._signal.poll(
+            receiver,
+            question,
+            answers,
+            allow_multiple_selections=allow_multiple_selections,
+        )
+        resp_payload = await resp.json()
+        timestamp = int(resp_payload["timestamp"])
+        self._logger.info("[Bot] New poll created:\n%s", question)
+
+        return timestamp
+
     async def react(self, message: Message, emoji: str) -> None:
+        """React to a message with an emoji.
+
+        Args:
+            message: The message to react to.
+            emoji: Emoji reaction value.
+        """
         # TODO: check that emoji is really an emoji  # noqa: TD002, TD003
         recipient = message.recipient()
         recipient = self._resolve_receiver(recipient)
@@ -269,6 +400,12 @@ class SignalBot:
         message: Message,
         receipt_type: Literal["read", "viewed"],
     ) -> None:
+        """Send a read or viewed receipt for a message if supported.
+
+        Args:
+            message: The message to acknowledge.
+            receipt_type: Receipt type to send.
+        """
         if message.group is not None:
             self._logger.warning("[Bot] Receipts are not supported for groups")
             return
@@ -278,10 +415,20 @@ class SignalBot:
         self._logger.info(f"[Bot] Receipt: {receipt_type}")  # noqa: G004
 
     async def start_typing(self, receiver: str) -> None:
+        """Send a typing indicator to a receiver.
+
+        Args:
+            receiver: Message recipient.
+        """
         receiver = self._resolve_receiver(receiver)
         await self._signal.start_typing(receiver)
 
     async def stop_typing(self, receiver: str) -> None:
+        """Stop a typing indicator for a receiver.
+
+        Args:
+            receiver: Message recipient.
+        """
         receiver = self._resolve_receiver(receiver)
         await self._signal.stop_typing(receiver)
 
@@ -291,6 +438,13 @@ class SignalBot:
         expiration_in_seconds: int | None = None,
         name: str | None = None,
     ) -> None:
+        """Update a contact's metadata.
+
+        Args:
+            receiver: Contact identifier.
+            expiration_in_seconds: Expiration timer in seconds.
+            name: Contact display name.
+        """
         receiver = self._resolve_receiver(receiver)
         await self._signal.update_contact(
             receiver,
@@ -306,6 +460,15 @@ class SignalBot:
         expiration_in_seconds: int | None = None,
         name: str | None = None,
     ) -> None:
+        """Update a group's metadata.
+
+        Args:
+            group_id: Group identifier or name.
+            base64_avatar: Base64-encoded avatar.
+            description: Group description.
+            expiration_in_seconds: Expiration timer in seconds.
+            name: Group display name.
+        """
         group_id = self._resolve_receiver(group_id)
         await self._signal.update_group(
             group_id,
@@ -316,6 +479,15 @@ class SignalBot:
         )
 
     async def remote_delete(self, receiver: str, timestamp: int) -> int:
+        """Delete a previously sent message.
+
+        Args:
+            receiver: Recipient identifier.
+            timestamp: Timestamp of the message to delete.
+
+        Returns:
+            The timestamp of the delete action.
+        """
         receiver = self._resolve_receiver(receiver)
 
         resp = await self._signal.remote_delete(
@@ -329,7 +501,11 @@ class SignalBot:
         return ret_timestamp
 
     async def delete_attachment(self, attachment_filename: str) -> None:
-        # Delete the attachment from the local storage
+        """Delete an attachment from local storage.
+
+        Args:
+            attachment_filename: File name to delete.
+        """
         await self._signal.delete_attachment(attachment_filename)
 
     async def _detect_groups(self) -> None:
@@ -390,18 +566,32 @@ class SignalBot:
         if self._is_username(receiver):
             return receiver
 
-        if self._is_group_id(receiver):
-            return receiver
-
-        group = self._groups_by_internal_id.get(receiver)
-        if group is not None:
-            return group["id"]
-
-        group = self._get_group_by_name(receiver)
-        if group is not None:
-            return group["id"]
+        group_id = self._resolve_group_receiver(receiver)
+        if group_id is not None:
+            return group_id
 
         raise SignalBotError("Cannot resolve receiver.")  # noqa: EM101, TRY003
+
+    def _resolve_group_receiver(self, group_id_or_name: str) -> str | None:
+        group = self._groups_by_id.get(group_id_or_name)
+        if group is not None:
+            return group["id"]
+
+        if self._is_group_id(group_id_or_name):
+            error_msg = f"[Bot] Group with id '{group_id_or_name}' not found. There "
+            error_msg += "is a typo in id or the bot is not a member of the group."
+            self._logger.warning(error_msg)
+            return group_id_or_name
+
+        group = self._groups_by_internal_id.get(group_id_or_name)
+        if group is not None:
+            return group["id"]
+
+        group = self._get_group_by_name(group_id_or_name)
+        if group is not None:
+            return group["id"]
+
+        return None
 
     def _is_phone_number(self, phone_number: str) -> bool:
         try:
@@ -466,9 +656,9 @@ class SignalBot:
         groups = self._groups_by_name.get(group_name)
         if groups is not None:
             if len(groups) > 1:
-                self._logger.warning(
-                    f"[Bot] There is more than one group named '{group_name}', using the first one.",  # noqa: E501, G004
-                )
+                error_msg = f"[Bot] There is more than one group named '{group_name}',"
+                error_msg += " using the first one."
+                self._logger.warning(error_msg)
             return groups[0]
         return None
 
@@ -502,7 +692,7 @@ class SignalBot:
             self._logger.warning(f"Restarting coroutine in {sleep_t} seconds")  # noqa: G004
             await asyncio.sleep(sleep_t)
 
-    async def _produce_consume_messages(
+    async def _create_produce_consume_messages_tasks(
         self,
         producers: int = 1,
         consumers: int = 3,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from enum import Enum
 from typing import TYPE_CHECKING, Any, Literal
 
 import aiohttp
@@ -10,17 +11,38 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
 
+class ConnectionMode(str, Enum):
+    """Protocol strategy for connecting to `signal-cli-rest-api`.
+
+    Attributes:
+        HTTPS_ONLY: Always use HTTPS/WSS.
+        HTTP_ONLY: Always use HTTP/WS.
+        AUTO: Start with HTTPS/WSS and fallback to HTTP/WS if unavailable.
+    """
+
+    HTTPS_ONLY = "https_only"
+    HTTP_ONLY = "http_only"
+    AUTO = "auto"
+
+
+HEALTH_CHECK_GOOD_STATUS = 204
+
+
 class SignalAPI:
     def __init__(  # noqa: ANN204
         self,
         signal_service: str,
         phone_number: str,
         download_attachments: bool = True,  # noqa: FBT001, FBT002
+        connection_mode: ConnectionMode = ConnectionMode.AUTO,
     ):
         self.phone_number = phone_number
+        self.connection_mode = connection_mode
+        use_https = connection_mode in (ConnectionMode.HTTPS_ONLY, ConnectionMode.AUTO)
         self._signal_api_uris = SignalAPIURIs(
             signal_service=signal_service,
             phone_number=phone_number,
+            use_https=use_https,
         )
         self.download_attachments = download_attachments
 
@@ -80,6 +102,34 @@ class SignalAPI:
             payload["link_preview"] = link_preview
         if view_once:
             payload["view_once"] = True
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                resp = await session.post(uri, json=payload)
+                resp.raise_for_status()
+                return resp
+        except (
+            aiohttp.ClientError,
+            aiohttp.http_exceptions.HttpProcessingError,
+            KeyError,
+        ) as exc:
+            raise SendMessageError from exc
+
+    async def poll(
+        self,
+        receiver: str,
+        question: str,
+        answers: list[str],
+        *,
+        allow_multiple_selections: bool = False,
+    ) -> aiohttp.ClientResponse:
+        uri = self._signal_api_uris.poll_rest_uri()
+        payload = {
+            "recipient": receiver,
+            "question": question,
+            "answers": answers,
+            "allow_multiple_selections": allow_multiple_selections,
+        }
 
         try:
             async with aiohttp.ClientSession() as session:
@@ -303,29 +353,42 @@ class SignalAPI:
         ) as exc:
             raise HealthCheckError from exc
 
-    async def check_signal_service(self) -> bool:
-        self._signal_api_uris.use_https = True
+    async def _is_signal_service_available(self) -> bool:
         try:
-            return (await self.health_check()).status == 204  # noqa: PLR2004
+            return (await self.health_check()).status == HEALTH_CHECK_GOOD_STATUS
         except HealthCheckError:
-            self._signal_api_uris.use_https = False
-            try:
-                return (await self.health_check()).status == 204  # noqa: PLR2004
-            except HealthCheckError:
-                return False
+            return False
 
-    async def get_signal_cli_rest_api_version(self) -> str:
+    async def check_signal_service(self) -> bool:
+        if self.connection_mode != ConnectionMode.AUTO:
+            # use_https is already set according to the connection mode
+            return await self._is_signal_service_available()
+
+        self._signal_api_uris.use_https = True
+        if await self._is_signal_service_available():
+            return True
+
+        self._signal_api_uris.use_https = False
+        return await self._is_signal_service_available()
+
+    async def get_signal_cli_about(self) -> dict[str, Any]:
         uri = self._signal_api_uris.about_rest_uri()
         try:
             async with aiohttp.ClientSession() as session:
                 resp = await session.get(uri)
                 resp.raise_for_status()
-                return (await resp.json())["version"]
+                return await resp.json()
         except (
             aiohttp.ClientError,
             aiohttp.http_exceptions.HttpProcessingError,
         ) as exc:
             raise AboutError from exc
+
+    async def get_signal_cli_rest_api_version(self) -> str:
+        return (await self.get_signal_cli_about())["version"]
+
+    async def get_signal_cli_rest_api_mode(self) -> str:
+        return (await self.get_signal_cli_about())["mode"]
 
     async def remote_delete(
         self, receiver: str, timestamp: int
@@ -371,6 +434,11 @@ class SignalAPIURIs:
 
     def send_rest_uri(self) -> str:
         return f"{self.https_or_http}://{self.signal_service}/v2/send"
+
+    def poll_rest_uri(self) -> str:
+        return (
+            f"{self.https_or_http}://{self.signal_service}/v1/polls/{self.phone_number}"
+        )
 
     def react_rest_uri(self) -> str:
         return f"{self.https_or_http}://{self.signal_service}/v1/reactions/{self.phone_number}"

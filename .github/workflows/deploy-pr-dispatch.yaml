@@ -21,7 +21,7 @@ jobs:
       - name: Trigger the deploy-pr-command workflow and add a reaction to the comment
         if: steps.checkUser.outputs.require-result == 'true'
         id: checkCommand
-        uses: peter-evans/slash-command-dispatch@v4
+        uses: peter-evans/slash-command-dispatch@v5
         with:
           commands: |
             deploy

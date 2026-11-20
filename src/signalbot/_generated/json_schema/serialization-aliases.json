@@ -1,0 +1,5 @@
+{
+  "receive.Attachment.id": "id",
+  "receive.Attachment.filename": "filename",
+  "api.UpdateGroupRequest.expiration_time": "expiration_time"
+}

@@ -1,11 +1,15 @@
-from examples.commands.help import CommandWithHelpMessage
-from signalbot import Context, triggered
+from signalbot import (
+    DataMessageContext,
+    DataMessageHandler,
+    SendMessage,
+    text_triggered,
+)
 
 
-class ReplyCommand(CommandWithHelpMessage):
+class ReplyCommand(DataMessageHandler):
     def help_message(self) -> str:
         return "reply: 💬 Reply to a message."
 
-    @triggered("reply")
-    async def handle(self, context: Context) -> None:
-        await context.reply("This is a reply.")
+    @text_triggered("reply")
+    async def handle_data_message(self, context: DataMessageContext) -> None:
+        await context.reply(SendMessage(text="This is a reply."))

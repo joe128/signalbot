@@ -1,61 +1,97 @@
-import logging
 import os
 
 from examples.commands import (
+    AboutCommand,
     AttachmentCommand,
+    BroadcastCommand,
+    CloseCommand,
     DeleteCommand,
     DeleteLocalAttachmentCommand,
     EditCommand,
+    EditNotifierHandler,
     HelpCommand,
+    LinkPreviewCommand,
     PingCommand,
-    ReactionCommand,
-    ReceiveDeleteCommand,
+    PollCommand,
+    ReactCommand,
+    ReceiptCommand,
     RegexTriggeredCommand,
     ReplyCommand,
     StylesCommand,
-    ThumbsUpCommand,
     TriggeredCommand,
     TypingCommand,
+    TypingIndicatorToggleCommand,
+    UpdateContactCommand,
+    UpdateGroupCommand,
 )
-from signalbot import SignalBot, enable_console_logging
+from examples.handlers import (
+    DeletionNotifierHandler,
+    FilteredReactionHandler,
+    GroupUpdateNotifierHandler,
+    ReactionDetailsHandler,
+    TypingIndicatorHandler,
+    WelcomeHandler,
+)
+from signalbot import Config, SignalBot
 
 
 def main() -> None:
-    enable_console_logging(logging.INFO)
-
-    signal_service = os.environ["SIGNAL_SERVICE"]
     phone_number = os.environ["PHONE_NUMBER"]
 
-    config = {
-        "signal_service": signal_service,
-        "phone_number": phone_number,
-    }
-    bot = SignalBot(config)
+    # Replace the recipient with your own phone number or group ID to
+    # receive the welcome message and the broadcast message.
+    contact_phone_number = os.environ.get("CONTACT_PHONE_NUMBER")
 
+    bot = SignalBot(Config(phone_number=phone_number))
+
+    bot.register(WelcomeHandler(recipient=contact_phone_number))
+
+    # By default the handlers are enabled for all contacts and all groups
     bot.register(HelpCommand())
-
-    # enable a chat command for all contacts and all groups
     bot.register(PingCommand())
     bot.register(ReplyCommand())
-
-    # enable a chat command only for groups
-    bot.register(AttachmentCommand(), contacts=False, groups=True)
-
-    # enable a chat command for one specific group with the name "My Group"
-    bot.register(TypingCommand(), groups=["My Group"])
-
-    # chat command is enabled for all groups and one specific contact
-    bot.register(TriggeredCommand(), contacts=["+490123456789"], groups=True)
-
     bot.register(RegexTriggeredCommand())
-    bot.register(ReactionCommand())
-    bot.register(ThumbsUpCommand())
-
+    bot.register(ReactCommand())
     bot.register(EditCommand())
+    bot.register(EditNotifierHandler())
     bot.register(DeleteCommand())
-    bot.register(ReceiveDeleteCommand())
     bot.register(DeleteLocalAttachmentCommand())
     bot.register(StylesCommand())
+    bot.register(LinkPreviewCommand())
+    bot.register(CloseCommand())
+    bot.register(PollCommand())
+    bot.register(ReceiptCommand())
+    bot.register(AboutCommand())
+    bot.register(ReactionDetailsHandler())
+    bot.register(FilteredReactionHandler())
+    bot.register(DeletionNotifierHandler())
+    bot.register(GroupUpdateNotifierHandler())
+
+    # Disabled by default; toggle it with the enable-typing-indicator /
+    # disable-typing-indicator commands.
+    typing_indicator_handler = TypingIndicatorHandler()
+    bot.register(typing_indicator_handler)
+    bot.register(TypingIndicatorToggleCommand(typing_indicator_handler))
+
+    # The handler will only trigger for group messages
+    bot.register(AttachmentCommand(), contacts=False)
+    bot.register(UpdateGroupCommand(), contacts=False)
+
+    # The handler will only trigger for private messages, since updating a
+    # contact's metadata doesn't apply to groups
+    bot.register(UpdateContactCommand(), groups=False)
+
+    # Replace with the phone numbers or group IDs that should receive the
+    # broadcast message
+    broadcast_recipients = [contact_phone_number] if contact_phone_number else []
+    bot.register(BroadcastCommand(recipients=broadcast_recipients))
+
+    # The handler will only trigger the group named "My Group"
+    bot.register(TypingCommand(), groups=["My Group"], contacts=False)
+
+    # The handler will only trigger for the contact "+490123456789"
+    bot.register(TriggeredCommand(), contacts=["+490123456789"], groups=False)
+
     bot.start()
 
 

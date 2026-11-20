@@ -1,34 +1,22 @@
-import logging
 import os
 
 import typer
 
-from signalbot import SignalBot, enable_console_logging
+from signalbot import SendMessage, SignalBot
 
 
-async def send(bot: SignalBot, receiver: str, text: str) -> None:
-    # Wait until the bot is fully initialized before sending a message
-    await bot.init_task
+async def ping(bot: SignalBot, recipient: str) -> None:
+    # Scheduled jobs can run before the bot has finished connecting, so wait for it.
+    await bot.wait_until_ready()
 
-    await bot.send(receiver=receiver, text=text)
+    await bot.messages.send(SendMessage(text="Ping"), recipient)
 
 
-def main(
-    receiver: str = os.environ["PHONE_NUMBER"],
-    text: str = "Hello from SignalBot!",
-) -> None:
-    enable_console_logging(logging.INFO)
-
-    config = {
-        "signal_service": os.environ["SIGNAL_SERVICE"],
-        "phone_number": os.environ["PHONE_NUMBER"],
-    }
+def main(recipient: str = os.environ["PHONE_NUMBER"]) -> None:
+    config = {"phone_number": os.environ["PHONE_NUMBER"]}
     bot = SignalBot(config)
 
-    bot.scheduler.add_job(send, args=[bot, receiver, text])
-    bot.scheduler.add_job(
-        send, args=[bot, receiver, "Ping"], trigger="interval", seconds=5
-    )
+    bot.scheduler.add_job(ping, args=[bot, recipient], trigger="interval", seconds=5)
     bot.start()
 
 

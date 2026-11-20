@@ -1,0 +1,34 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from signalbot._client.base import BaseClient, SectionURIs
+from signalbot.errors import SignalAPIError
+
+if TYPE_CHECKING:
+    import aiohttp
+
+    from signalbot._generated import UpdateContactRequest
+
+
+class ContactsURIs(SectionURIs):
+    def contacts_uri(self) -> str:
+        return self._base.http_uri(f"/v1/contacts/{self._base.phone_number}")
+
+
+class ContactsClient(BaseClient[ContactsURIs]):
+    async def update(
+        self,
+        update_contact_request: UpdateContactRequest,
+    ) -> aiohttp.ClientResponse:
+        uri = self._uris.contacts_uri()
+        payload = update_contact_request.model_dump_json(
+            exclude_none=True, by_alias=True
+        )
+        return await self._request(
+            "put", uri, error_cls=UpdateContactError, payload=payload
+        )
+
+
+class UpdateContactError(SignalAPIError):
+    """Raised when the API rejects a contact metadata update."""

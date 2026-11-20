@@ -1,12 +1,16 @@
-from examples.commands.help import CommandWithHelpMessage
-from signalbot import Context, triggered
+from signalbot import (
+    DataMessageContext,
+    DataMessageHandler,
+    SendMessage,
+    text_triggered,
+)
 
 
-class TriggeredCommand(CommandWithHelpMessage):
+class TriggeredCommand(DataMessageHandler):
     def help_message(self) -> str:
-        return "command_1, command_2 or command_3: 😤😤😤 Decorator example."
+        return "command-1, command-2 or command-3: 😤😤😤 Decorator example."
 
     # add case_sensitive=True for case sensitive triggers
-    @triggered("command_1", "Command_2", "CoMmAnD_3")
-    async def handle(self, context: Context) -> None:
-        await context.send("I am triggered")
+    @text_triggered("command-1", "Command-2", "CoMmAnD-3")
+    async def handle_data_message(self, context: DataMessageContext) -> None:
+        await context.send(SendMessage(text="Multi command trigger"))

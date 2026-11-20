@@ -1,57 +1,47 @@
 import asyncio
-from datetime import datetime
 
-from anyio import Path
+from signalbot import (
+    DataMessageContext,
+    DataMessageHandler,
+    SendMessage,
+    text_triggered,
+)
 
-from examples.commands.help import CommandWithHelpMessage
-from signalbot import Context, MessageType, triggered
 
-
-class DeleteCommand(CommandWithHelpMessage):
+class DeleteCommand(DataMessageHandler):
     def help_message(self) -> str:
         return "delete: 🗑️ Delete a message."
 
-    @triggered("delete")
-    async def handle(self, context: Context) -> None:
-        timestamp = await context.send("This message will be deleted in two seconds.")
+    @text_triggered("delete")
+    async def handle_data_message(self, context: DataMessageContext) -> None:
+        sent_message = await context.send(
+            SendMessage(text="This message will be deleted in two seconds.")
+        )
         await asyncio.sleep(2)
-        await context.remote_delete(timestamp=timestamp)
+        await context.remote_delete(sent_message)
 
 
-class DeleteLocalAttachmentCommand(CommandWithHelpMessage):
+class DeleteLocalAttachmentCommand(DataMessageHandler):
     def help_message(self) -> str:
-        return "delete_attachment: 🗑️ Delete the local copy of an attachment."
+        return "delete-attachment: 🗑️ Delete the local copy of an attachment."
 
-    @triggered("delete_attachment")
-    async def handle(self, context: Context) -> None:
-        local_filenames = context.message.attachments_local_filenames
-        if local_filenames is None or len(local_filenames) == 0:
-            await context.send("Please send an attachment to delete.")
+    @text_triggered("delete-attachment")
+    async def handle_data_message(self, context: DataMessageContext) -> None:
+        attachments = context.message.attachments
+        if attachments is None or len(attachments) == 0:
+            await context.send(SendMessage(text="Please send an attachment to delete."))
+            return
 
-        for attachment_filename in local_filenames:
-            attachment_path: Path = (
-                await Path.home()
-                / ".local/share/signal-api/attachments"
-                / attachment_filename
-            )
+        for attachment in attachments:
+            attachment_path = await attachment.local_path()
+
+            if attachment_path is None:
+                continue
 
             if await attachment_path.exists():
-                print(f"Received file {attachment_path}")  # noqa: T201
+                await context.send(SendMessage(text=f"Received file {attachment_path}"))
 
-            await context.bot.delete_attachment(attachment_filename)
+            await context.delete_attachment(attachment)
 
             if not await attachment_path.exists():
-                print(f"Deleted file {attachment_path}")  # noqa: T201
-
-
-class ReceiveDeleteCommand(CommandWithHelpMessage):
-    def help_message(self) -> str:
-        return "N/A: 🗑️ Receive a message has been deleted notification."
-
-    async def handle(self, context: Context) -> None:
-        if context.message.type == MessageType.DELETE_MESSAGE:
-            deleted_at = datetime.fromtimestamp(  # noqa: DTZ006
-                context.message.remote_delete_timestamp / 1000
-            )
-            message = f"You've deleted a message, which was sent at {deleted_at}."
-            await context.send(message)
+                await context.send(SendMessage(text=f"Deleted file {attachment_path}"))

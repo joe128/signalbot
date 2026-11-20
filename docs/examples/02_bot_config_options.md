@@ -1,0 +1,140 @@
+# Bot config
+
+## Main configuration
+
+The configuration of the bot can be specified in several ways.
+
+### Config
+
+Create a [Config][signalbot.Config] instance:
+
+```python
+from signalbot import SignalBot, Config
+
+config = Config(phone_number="+1234567890")
+
+bot = SignalBot(config)
+bot.start()
+```
+
+### Dictionary
+
+Create a python dictionary:
+
+```python
+from signalbot import SignalBot, Config
+
+config = {"phone_number": "+1234567890"}
+
+bot = SignalBot(config)
+bot.start()
+```
+
+### Yaml file
+
+Create a YAML configuration file:
+
+```yaml title="config.yml"
+phone_number: "+1234567890"
+```
+
+Then load it:
+
+```python
+from signalbot import SignalBot
+
+bot = SignalBot("config.yml")
+bot.start()
+```
+
+### Json file
+
+Create a JSON configuration file:
+
+```json title="config.json"
+{"phone_number": "+1234567890"}
+```
+
+Then load it:
+
+```python
+from signalbot import SignalBot
+
+bot = SignalBot("config.json")
+bot.start()
+```
+
+## Storage type options
+
+There are also several storage backends that can be used to handle data persistance.
+
+### In-memory
+
+Stores data in memory only.
+Data is lost when the bot restarts.
+Useful for development and testing.
+
+```yaml title="config.yml"
+phone_number: "+1234567890"
+storage:
+  type: "in-memory"
+```
+
+### SQLite
+
+Persists data to a local SQLite database.
+See the [SQLiteStorage][signalbot.storage.SQLiteStorage] API reference for details.
+
+```yaml title="config.yml"
+phone_number: "+1234567890"
+storage:
+  type: "sqlite"
+  db: "./data/bot.db"
+```
+
+### Redis
+
+Persists data to Redis database.
+See the [RedisStorage][signalbot.storage.RedisStorage] API reference for details.
+
+```yaml title="config.yml"
+phone_number: "+1234567890"
+storage:
+  type: "redis"
+  host: "localhost"
+  port: 6379
+```
+
+## Authentication
+
+Enables usage of an auth-enabled `signal-cli-rest-api` instance (behind a proxy).
+
+### User and password
+Username and password based authentication using the [BasicAuthConfig][signalbot.BasicAuthConfig] class.
+
+```python
+from signalbot import BasicAuthConfig, Config, SignalBot
+
+config = Config(
+    phone_number="+1234567890",
+    auth=BasicAuthConfig(username="user", password="password"),
+)
+
+bot = SignalBot(config)
+bot.start()
+```
+
+### Token
+Token based authentication using the [BearerAuthConfig][signalbot.BearerAuthConfig] class.
+
+```python
+from signalbot import BearerAuthConfig, Config, SignalBot
+
+config = Config(
+    phone_number="+1234567890",
+    auth=BearerAuthConfig(token="token")
+)
+
+bot = SignalBot(config)
+bot.start()
+```

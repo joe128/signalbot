@@ -1,11 +1,15 @@
-from examples.commands.help import CommandWithHelpMessage
-from signalbot import Context, triggered
+from signalbot import (
+    DataMessageContext,
+    DataMessageHandler,
+    SendMessage,
+    text_triggered,
+)
 
 
-class PingCommand(CommandWithHelpMessage):
+class PingCommand(DataMessageHandler):
     def help_message(self) -> str:
         return "ping: 🏓 Listen for a ping and send a pong reply."
 
-    @triggered("ping")
-    async def handle(self, context: Context) -> None:
-        await context.send("pong")
+    @text_triggered("ping")
+    async def handle_data_message(self, context: DataMessageContext) -> None:
+        await context.send(SendMessage(text="pong"))

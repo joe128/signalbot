@@ -1,27 +1,10 @@
-from examples.commands.help import CommandWithHelpMessage
-from signalbot import Context, reaction_triggered
+from signalbot import DataMessageContext, DataMessageHandler, text_triggered
 
 
-class ReactionCommand(CommandWithHelpMessage):
+class ReactCommand(DataMessageHandler):
     def help_message(self) -> str:
-        return "react with any emoji: 👍 Reaction decorator example."
+        return "send-reaction: 🎉 Send a reaction to a message."
 
-    @reaction_triggered()
-    async def handle(self, context: Context) -> None:
-        reaction = context.message.reaction
-        if reaction.is_remove:
-            await context.send(f"You removed your {reaction.emoji} reaction")
-            return
-        await context.send(
-            f"{reaction.emoji} from {context.message.source} "
-            f"on message at {reaction.target_sent_timestamp}"
-        )
-
-
-class ThumbsUpCommand(CommandWithHelpMessage):
-    def help_message(self) -> str:
-        return "react with 👍 or ❤️: 🎯 Filtered reaction decorator example."
-
-    @reaction_triggered("👍", "❤️")
-    async def handle(self, context: Context) -> None:
-        await context.send("Thanks for the love!")
+    @text_triggered("send-reaction")
+    async def handle_data_message(self, context: DataMessageContext) -> None:
+        await context.react("🎉")

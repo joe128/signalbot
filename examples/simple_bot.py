@@ -2,29 +2,27 @@ import logging
 import os
 
 from signalbot import (
-    Command,
     Config,
-    Context,
+    DataMessageContext,
+    DataMessageHandler,
+    SendMessage,
     SignalBot,
-    enable_console_logging,
-    triggered,
+    text_triggered,
 )
 
 
-class PingCommand(Command):
-    @triggered("Ping")
-    async def handle(self, context: Context) -> None:
-        await context.send("Pong")
+class PingCommand(DataMessageHandler):
+    @text_triggered("Ping")
+    async def handle_data_message(self, context: DataMessageContext) -> None:
+        await context.send(SendMessage(text="Pong"))
 
 
 if __name__ == "__main__":
-    enable_console_logging(logging.INFO)
-
     bot = SignalBot(
         Config(
-            signal_service=os.environ["SIGNAL_SERVICE"],
             phone_number=os.environ["PHONE_NUMBER"],
+            logging_level=logging.INFO,
         )
     )
-    bot.register(PingCommand())  # Run the command for all contacts and groups
+    bot.register(PingCommand())
     bot.start()

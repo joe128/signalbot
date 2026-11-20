@@ -1,0 +1,126 @@
+[project]
+site_url = "https://signalbot-org.github.io/signalbot/"
+site_name = "Signalbot"
+site_description = "Documentation for Signalbot, a Python library for building Signal bots using the signal-cli-rest-api."
+site_author = "Gara Dorta"
+
+copyright = "Copyright &copy; 2021 René Filip."
+
+repo_url = "https://github.com/signalbot-org/signalbot"
+repo_name = "signalbot-org/signalbot"
+
+extra_css = ["stylesheets/extra.css"]
+
+[project.theme]
+language = "en"
+logo = "assets/logo.svg"
+favicon = "assets/logo.svg"
+
+features = [
+  "announce.dismiss",
+  "content.code.annotate",
+  "content.code.copy",
+  "content.code.select",
+  "content.footnote.tooltips",
+  "content.tabs.link",
+  "content.tooltips",
+  "navigation.footer",
+  "navigation.indexes",
+  "navigation.instant",
+  "navigation.instant.prefetch",
+  "navigation.path",
+  # "navigation.sections", # Disable sections, otherwise too many levels are shown in the sidebar
+  "navigation.top",
+  "navigation.tracking",
+  "search.highlight",
+]
+
+[project.theme.icon]
+repo = "fontawesome/brands/github"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme)"
+toggle.icon = "lucide/sun-moon"
+toggle.name = "Switch to light mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to system preference"
+
+[project.markdown_extensions]
+abbr = {}
+admonition = {}
+attr_list = {}
+def_list = {}
+footnotes = {}
+md_in_html = {}
+toc = {
+  permalink = true,
+}
+pymdownx.arithmatex = {
+  generic = true,
+}
+pymdownx.betterem = {}
+pymdownx.caret = {}
+pymdownx.details = {}
+pymdownx.emoji = {
+  emoji_generator = "zensical.extensions.emoji.to_svg",
+  emoji_index = "zensical.extensions.emoji.twemoji",
+}
+pymdownx.highlight = {
+  anchor_linenums = true,
+  line_spans = "__span",
+  pygments_lang_class = true,
+}
+pymdownx.inlinehilite = {}
+pymdownx.keys = {}
+pymdownx.magiclink = {}
+pymdownx.mark = {}
+pymdownx.smartsymbols = {}
+pymdownx.snippets = {}  # Enable --8<-- code includes
+pymdownx.superfences = {
+  custom_fences = [
+    {
+      name = "mermaid",
+      class = "mermaid",
+      format = "pymdownx.superfences.fence_code_format",
+    },
+  ],
+}
+pymdownx.tabbed = {
+  alternate_style = true,
+  combine_header_slug = true,
+}
+pymdownx.tasklist = {
+  custom_checkbox = true,
+}
+pymdownx.tilde = {}
+
+[project.plugins.mkdocstrings.handlers.python]
+inventories = [
+  "https://docs.python.org/3/objects.inv",
+  "https://mkdocstrings.github.io/griffe/objects.inv",
+  "https://docs.pydantic.dev/latest/objects.inv",
+  "https://apscheduler.readthedocs.io/en/3.x/objects.inv",
+  "https://anyio.readthedocs.io/en/stable/objects.inv",
+]
+options = {
+  show_root_toc_entry = false,
+  separate_signature = true,
+  docstring_options = { ignore_init_summary = true },
+  merge_init_into_class = true,
+  show_signature_annotations = true,
+  signature_crossrefs = true,
+  extensions = [{ griffe_pydantic = {} }],
+}
+
+[project.extra.version]
+provider = "mike"
